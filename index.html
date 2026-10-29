@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="description" content="Share a specific timestamp range from a YouTube video.">
+  <title>YouTube Clip Player</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#101216;color:#f1f0ed}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;padding:clamp(20px,5vw,56px) 16px}
+    main{max-width:900px;margin:0 auto}
+    .eyebrow{color:#d39b98;text-transform:uppercase;font-size:.7rem;letter-spacing:.18em;font-weight:800}
+    h1{font-size:clamp(2rem,5vw,3.7rem);letter-spacing:-.045em;font-weight:700;margin:12px 0 8px}
+    p{line-height:1.55;color:#acb1b9}
+    .description{margin-top:0;margin-bottom:24px}
+    .player-shell{background:#1b1f25;border:1px solid #363b44;overflow:hidden;border-radius:14px;box-shadow:0 18px 55px #0006}
+    .player{aspect-ratio:16/9;background:#050607}
+    .player iframe{display:block;border:0;width:100%;height:100%}
+    .times{padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-variant-numeric:tabular-nums;font-size:.95rem}
+    .duration{font-size:.8rem;color:#adb4bd}
+    .actions{margin:16px 0 30px;display:flex;gap:10px;flex-wrap:wrap}
+    button,.button{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none;font:inherit;font-weight:650;font-size:.92rem;padding:11px 17px;border-radius:9px;border:1px solid #414751;background:#2a3039;color:#f9f7f2}
+    button.primary{background:#cc615a;border-color:#cc615a;color:white}
+    button:hover,.button:hover{filter:brightness(1.15)}
+    button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #e6aca2;outline-offset:2px}
+    .note{font-size:.85rem;line-height:1.6;color:#acb1b9;margin:0 0 28px}
+    .builder{background:#1a1e24;border:1px solid #363b44;padding:20px;border-radius:14px}
+    h2{font-size:1.25rem;margin:0 0 10px}
+    .builder>p{margin:0 0 18px;font-size:.85rem}
+    .grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px}
+    label{display:block;color:#c7cbd2;font-size:.8rem;font-weight:650;margin-bottom:7px}
+    input{min-width:0;width:100%;background:#101318;color:#fff;border:1px solid #424852;border-radius:8px;padding:11px 12px;font-size:.95rem}
+    .form-actions{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+    .error{color:#f3a19b;margin:10px 0 0;font-size:.85rem;min-height:1.4em}
+    footer{font-size:.78rem;margin-top:26px;color:#9199a3}
+    footer a{color:#e3b7b3}
+    @media(max-width:650px){.grid{grid-template-columns:1fr 1fr}.grid>div:first-child{grid-column:span 2}.actions button,.actions .button{flex:1}.times{padding:12px}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Reusable YouTube clip viewer</div>
+  <h1 id="heading">Selected video excerpt</h1>
+  <p class="description" id="description">The player is set to play a specific range from the original video.</p>
+
+  <section class="player-shell" aria-label="Video excerpt">
+    <div id="player" class="player"></div>
+    <div class="times"><strong id="start-label">45:00</strong><span class="duration" id="duration-label">2:48 excerpt</span><strong id="end-label">47:48</strong></div>
+  </section>
+
+  <div class="actions">
+    <button class="primary" id="copy-link" type="button">Copy shareable link</button>
+    <button id="replay" type="button">Replay clip</button>
+    <a id="original-link" class="button" target="_blank" rel="noopener noreferrer" href="https://www.youtube.com/watch?v=_RmxWpaVjo4&t=2700s">Open original on YouTube ↗</a>
+  </div>
+
+  <p class="note">This player uses the official YouTube embed with specified start and end times. It does not download or duplicate the video. Videos that prohibit embedding may not play; the YouTube fallback starts at the right time but does not stop automatically.</p>
+
+  <section class="builder">
+    <h2>Make another clip</h2>
+    <p>Paste a YouTube link and enter the start and end points. The resulting link is generated instantly; no account or new deployment required.</p>
+    <form id="clip-form" novalidate>
+      <div class="grid">
+        <div><label for="video-url">YouTube video</label><input id="video-url" required spellcheck="false" autocomplete="off" placeholder="https://youtu.be/…"></div>
+        <div><label for="start-time">Start</label><input id="start-time" required placeholder="45:00" inputmode="text"></div>
+        <div><label for="end-time">End</label><input id="end-time" required placeholder="47:48" inputmode="text"></div>
+      </div>
+      <div class="form-actions"><button class="primary" type="submit">Generate & open clip link</button></div>
+      <div role="alert" id="error" class="error"></div>
+    </form>
+  </section>
+  <footer>Host once on GitHub Pages. Future links only change their <code>v</code>, <code>start</code>, and <code>end</code> parameters. Not affiliated with YouTube.</footer>
+</main>
+<script>
+(function(){
+  'use strict';
+  const DEFAULT = {v:'_RmxWpaVjo4', start:2700, end:2868};
+  function extractId(s){
+    s=(s||'').trim();
+    if(/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
+    try{
+      const url=new URL(s);
+      const host=url.hostname.toLowerCase().replace(/^www\./,'').replace(/^m\./,'');
+      let match;
+      if(host==='youtu.be') match=url.pathname.match(/^\/([A-Za-z0-9_-]{11})(?:\/|$)/);
+      else if(host==='youtube.com'||host==='youtube-nocookie.com'){
+        const id=url.searchParams.get('v');
+        if(id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
+        match=url.pathname.match(/^\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{11})(?:\/|$)/);
+      }
+      return match?match[1]:null;
+    }catch {return null}
+  }
+  function parseTime(t){
+    t=String(t||'').trim();
+    if(/^\d+$/.test(t)) return Number(t);
+    if(!/^\d+(?::\d{1,2}){1,2}$/.test(t)) return null;
+    const parts=t.split(':').map(Number);
+    if(parts.slice(1).some(n=>n>=60))return null;
+    return parts.reduce((total,v)=>total*60+v,0);
+  }
+  function fmt(t){
+    const h=Math.floor(t/3600), m=Math.floor((t%3600)/60),s=t%60;
+    return (h? h+':'+String(m).padStart(2,'0'):String(m))+':'+String(s).padStart(2,'0');
+  }
+  const query=new URLSearchParams(location.search);
+  const candidateId=extractId(query.get('v')||query.get('video'));
+  const candidateStart=parseTime(query.get('start'));
+  const candidateEnd=parseTime(query.get('end'));
+  const validCandidate=candidateId&&Number.isSafeInteger(candidateStart)&&Number.isSafeInteger(candidateEnd)&&candidateStart>=0&&candidateEnd>candidateStart;
+  const clip=validCandidate?{v:candidateId,start:candidateStart,end:candidateEnd}:DEFAULT;
+  const videoUrl='https://www.youtube.com/watch?v='+clip.v+'&t='+clip.start+'s';
+  document.getElementById('start-label').textContent=fmt(clip.start);
+  document.getElementById('end-label').textContent=fmt(clip.end);
+  document.getElementById('duration-label').textContent=fmt(clip.end-clip.start)+' excerpt';
+  document.getElementById('heading').textContent=fmt(clip.start)+' – '+fmt(clip.end);
+  document.title='YouTube clip '+fmt(clip.start)+'–'+fmt(clip.end);
+  document.getElementById('original-link').href=videoUrl;
+  document.getElementById('video-url').value='https://youtu.be/'+clip.v;
+  document.getElementById('start-time').value=fmt(clip.start);
+  document.getElementById('end-time').value=fmt(clip.end);
+  const frameParent=document.getElementById('player');
+  function buildPlayer(){
+    const iframe=document.createElement('iframe');
+    iframe.title='YouTube video from '+fmt(clip.start)+' to '+fmt(clip.end);
+    iframe.referrerPolicy='strict-origin-when-cross-origin';
+    iframe.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+    iframe.allowFullscreen=true;
+    const embed=new URL('https://www.youtube-nocookie.com/embed/'+encodeURIComponent(clip.v));
+    embed.searchParams.set('start',String(clip.start));
+    embed.searchParams.set('end',String(clip.end));
+    embed.searchParams.set('playsinline','1');
+    embed.searchParams.set('rel','0');
+    iframe.src=embed.toString();
+    frameParent.replaceChildren(iframe);
+  }
+  buildPlayer();
+  document.getElementById('replay').addEventListener('click',buildPlayer);
+  document.getElementById('copy-link').addEventListener('click',async()=>{
+    const button=document.getElementById('copy-link');
+    try{await navigator.clipboard.writeText(location.href);button.textContent='Copied!';setTimeout(()=>button.textContent='Copy shareable link',1700)}
+    catch{window.prompt('Copy this link:',location.href)}
+  });
+  document.getElementById('clip-form').addEventListener('submit',e=>{
+    e.preventDefault();
+    const id=extractId(document.getElementById('video-url').value);
+    const start=parseTime(document.getElementById('start-time').value);
+    const end=parseTime(document.getElementById('end-time').value);
+    const error=document.getElementById('error');
+    if(!id){error.textContent='Enter a valid YouTube watch, Shorts, or youtu.be link.';return}
+    if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start){error.textContent='Enter valid times, with the end later than the start (e.g. 45:00 and 47:48).';return}
+    error.textContent='';
+    const url=new URL(location.href);url.search='';url.hash='';
+    url.searchParams.set('v',id);url.searchParams.set('start',String(start));url.searchParams.set('end',String(end));
+    location.assign(url.toString());
+  });
+})();
+</script>
+</body>
+</html>
